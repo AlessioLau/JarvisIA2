@@ -5,7 +5,7 @@ Fechas siempre en formato DD/MM/AAAA.
 from __future__ import annotations
 import re
 from datetime import datetime
-from database import get_db
+from database import get_db, use_supabase, sb_select
 from schemas import ExtractedItem
 
 
@@ -58,6 +58,9 @@ def _split_sentences(text: str) -> list[str]:
 
 
 def _load_rules(user_id: int) -> list[dict]:
+    if use_supabase():
+        all_rules = sb_select("rules", {})
+        return [r for r in all_rules if r.get("user_id") in (user_id, 1)]
     with get_db() as conn:
         c = conn.cursor()
         c.execute("SELECT keyword, target_type, target_value FROM rules WHERE user_id=? OR user_id=1", (user_id,))
@@ -99,16 +102,35 @@ def process(text: str, user_id: int = 1) -> list[ExtractedItem]:
     global_dates = _extract_dates(text)
     items: list[ExtractedItem] = []
 
+    current_date = None
+
     for sent in sentences:
-        # Limpiar la oración de verbos auxiliares al inicio
-        title = re.sub(r'^(tengo que|tengo|debo|hay que|necesito|quiero)\s+', '', sent.strip(), flags=re.IGNORECASE)
-        title = title.capitalize()
-        if len(title) < 4:
+        s = sent.strip()
+
+        # Extraer fechas presentes en este fragmento
+        local_dates = _extract_dates(s)
+        if local_dates:
+            current_date = local_dates[0]
+
+        # Limpiar el título
+        # 1. Quitar cadenas de fecha dd/mm/yyyy o dd/mm/yy
+        title = re.sub(r'\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b', '', s)
+        # 2. Quitar viñetas, 'x.', 'x ', guiones o números al inicio
+        title = re.sub(r'^[\s\*\-\d\.\,x]+', '', title, flags=re.IGNORECASE)
+        # 3. Quitar 'x', 'x.', puntos sobrantes al final
+        title = re.sub(r'[\s\.\,x]+$', '', title, flags=re.IGNORECASE)
+        # 4. Quitar verbos auxiliares al inicio
+        title = re.sub(r'^(tengo que|tengo|debo|hay que|necesito|quiero)\s+', '', title.strip(), flags=re.IGNORECASE)
+        title = title.strip()
+
+        # Si el título resultante es muy corto o no tiene palabras reales (ej: sólo era una fecha), descartar
+        if len(re.sub(r'[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]', '', title)) < 3:
             continue
 
-        area, category, priority = _apply_rules(sent, rules)
-        local_dates = _extract_dates(sent)
-        due_date = (local_dates or global_dates or [None])[0]
+        title = title[0].upper() + title[1:]
+
+        area, category, priority = _apply_rules(s, rules)
+        due_date = (local_dates or ([current_date] if current_date else None) or global_dates or [None])[0]
 
         is_ambiguous = category is None and area is None
 

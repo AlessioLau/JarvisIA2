@@ -46,6 +46,7 @@ async function processDump() {
     // 1. Guardar dump
     const dump = await apiFetch("/dumps", "POST", { text });
     state.pendingDumpId = dump.id;
+    if (state.dumps) state.dumps.unshift(dump);
 
     // 2. Procesar
     const result = await apiFetch("/dumps/process", "POST", { text, dump_id: dump.id });
@@ -112,7 +113,10 @@ function renderReview(originalText) {
         </div>
         <div class="form-group">
           <label>Fecha límite</label>
-          <input class="input" type="text" placeholder="dd/mm/aaaa" value="${escHtml(it.due_date||"")}" data-field="due_date">
+          <div style="position:relative; display:flex; align-items:center;">
+            <input class="input datepicker-input" type="text" placeholder="Seleccionar fecha..." value="${escHtml(it.due_date || '')}" data-field="due_date" style="cursor:pointer; padding-right:38px;">
+            <i class="fas fa-calendar-alt" style="position:absolute; right:14px; pointer-events:none; color:var(--primary); font-size:.95rem;"></i>
+          </div>
         </div>
       </div>
       ${it.is_ambiguous ? '<div class="pill" style="font-size:.72rem;color:var(--amber);border-color:var(--amber);"><i class="fas fa-triangle-exclamation"></i> Ítem ambiguo — verifica categoría y área</div>' : ""}
@@ -125,18 +129,37 @@ function renderReview(originalText) {
        <button class="btn btn-primary" onclick="approveItems()"><i class="fas fa-check"></i> Guardar todos</button>
      </div>`;
 
+  // Inicializar Flatpickr en cada selector de fecha
+  if (typeof flatpickr !== "undefined") {
+    area.querySelectorAll(".datepicker-input").forEach(el => {
+      flatpickr(el, {
+        dateFormat: "d/m/Y",
+        locale: (window.flatpickr && flatpickr.l10ns && flatpickr.l10ns.es) ? flatpickr.l10ns.es : "es",
+        allowInput: true,
+        theme: "dark",
+        onChange: (selectedDates, dateStr) => {
+          const card = el.closest(".review-card");
+          if (card) {
+            const idx = parseInt(card.dataset.idx);
+            const it = state.pendingExtracted.find(x => x._idx === idx);
+            if (it) it.due_date = dateStr || null;
+          }
+        }
+      });
+    });
+  }
+
   // Bind change events
   area.querySelectorAll(".review-card").forEach((card) => {
     const idx = parseInt(card.dataset.idx);
     card.querySelectorAll("[data-field]").forEach(el => {
-      el.addEventListener("change", () => {
+      const updateField = () => {
         const it = state.pendingExtracted.find(x => x._idx === idx);
-        if (it) it[el.dataset.field] = el.value;
-      });
-      el.addEventListener("input", () => {
-        const it = state.pendingExtracted.find(x => x._idx === idx);
-        if (it) it[el.dataset.field] = el.value;
-      });
+        if (!it) return;
+        it[el.dataset.field] = el.value ? el.value.trim() : null;
+      };
+      el.addEventListener("change", updateField);
+      el.addEventListener("input", updateField);
     });
   });
 }
@@ -157,8 +180,8 @@ async function approveItems() {
     state.pendingExtracted = []; state.pendingDumpId = null;
     document.getElementById("dump-text").value = "";
     document.getElementById("live-badges").innerHTML = "";
-    // Recargar tablero
-    await loadItems(); loadStats();
+    // Recargar tablero e historial de dumps
+    await Promise.all([loadItems(), loadStats(), loadDumps()]);
     navigate("board");
   } catch (e) { showToast(e.message, "error"); }
 }

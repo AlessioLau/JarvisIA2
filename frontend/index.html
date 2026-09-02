@@ -8,10 +8,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="vendor/flatpickr.min.css">
+  <link rel="stylesheet" href="vendor/flatpickr.dark.min.css">
+  <link rel="stylesheet" href="css/styles.css?v=3">
 </head>
 <body>
 <div class="app">
+
+  <!-- Mobile Overlay -->
+  <div id="mobile-sidebar-overlay" class="mobile-sidebar-overlay" onclick="closeSidebarMobile()"></div>
 
   <!-- ══ SIDEBAR ══════════════════════════════════════════ -->
   <aside class="sidebar">
@@ -21,6 +26,7 @@
         <div class="brand-name">JARVIS <span>IA</span></div>
         <div class="brand-sub">Segundo Cerebro v2</div>
       </div>
+      <button class="icon-btn mobile-close-btn" onclick="closeSidebarMobile()"><i class="fas fa-times"></i></button>
     </div>
 
     <div class="user-bar">
@@ -29,6 +35,7 @@
     </div>
 
     <span class="nav-label">Principal</span>
+    <button class="nav-btn active" data-tab="dashboard"><i class="fas fa-house"></i> Inicio</button>
     <button class="nav-btn" data-tab="dump"><i class="fas fa-brain"></i> Captura de Ideas</button>
     <button class="nav-btn" data-tab="review" style="display:none" id="nav-review"><i class="fas fa-list-check"></i> Revisar Items</button>
     <button class="nav-btn" data-tab="board"><i class="fas fa-columns"></i> Tablero Kanban</button>
@@ -36,7 +43,7 @@
 
     <span class="nav-label">Áreas</span>
     <button class="nav-btn" data-tab="facu"><i class="fas fa-graduation-cap"></i> Facultad</button>
-    <button class="nav-btn" data-tab="finanzas"><i class="fas fa-wallet"></i> Finanzas</button>
+    <button class="nav-btn" data-tab="finanzas"><i class="fas fa-wallet"></i> Finanzas & Inv.</button>
     <button class="nav-btn" data-tab="pedidos"><i class="fas fa-cube"></i> Impresión 3D</button>
 
     <span class="nav-label">Sistema</span>
@@ -51,6 +58,94 @@
 
   <!-- ══ MAIN ══════════════════════════════════════════════ -->
   <main class="main">
+
+    <!-- Mobile Topbar -->
+    <div class="mobile-topbar">
+      <button class="hamburger-btn" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+      <div class="brand-name" style="font-size:1.1rem;">JARVIS <span>IA</span></div>
+    </div>
+
+    <!-- ── DASHBOARD TAB ───────────────────────────────── -->
+    <section class="tab active" id="tab-dashboard">
+      <div class="dash-welcome-card card">
+        <div class="dash-welcome-left">
+          <h2 id="dash-greeting">¡Hola, Lau! 👋</h2>
+          <p id="dash-date">Cargando fecha...</p>
+        </div>
+        <div class="dash-quick-capture">
+          <input id="dash-quick-dump" class="input" placeholder="Captura rápida de tarea o idea..." onkeydown="if(event.key==='Enter')quickDumpDashboard()">
+          <button class="btn btn-primary btn-sm" onclick="quickDumpDashboard()"><i class="fas fa-bolt"></i> Capturar</button>
+        </div>
+      </div>
+
+      <!-- Metric Cards Grid -->
+      <div class="dash-metrics-grid">
+        <div class="card metric-card" onclick="navigate('board')">
+          <div class="metric-icon" style="background:rgba(245,158,11,.15);color:var(--amber)"><i class="fas fa-clock"></i></div>
+          <div>
+            <div class="metric-val" id="dash-stat-pending">0</div>
+            <div class="metric-lbl">Tareas Pendientes</div>
+          </div>
+        </div>
+        <div class="card metric-card" onclick="navigate('board')">
+          <div class="metric-icon" style="background:rgba(6,182,212,.15);color:var(--cyan)"><i class="fas fa-spinner"></i></div>
+          <div>
+            <div class="metric-val" id="dash-stat-progress">0</div>
+            <div class="metric-lbl">En Progreso</div>
+          </div>
+        </div>
+        <div class="card metric-card" onclick="navigate('pedidos')">
+          <div class="metric-icon" style="background:rgba(236,72,153,.15);color:var(--pink)"><i class="fas fa-cube"></i></div>
+          <div>
+            <div class="metric-val" id="dash-stat-pedidos">0</div>
+            <div class="metric-lbl">Pedidos 3D Activos</div>
+          </div>
+        </div>
+        <div class="card metric-card" onclick="navigate('finanzas')">
+          <div class="metric-icon" style="background:rgba(16,185,129,.15);color:var(--emerald)"><i class="fas fa-wallet"></i></div>
+          <div>
+            <div class="metric-val" id="dash-stat-balance">$0</div>
+            <div class="metric-lbl">Balance Total</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Two column dashboard layout -->
+      <div class="dash-content-grid">
+        <!-- Col Left: Tareas Próximas y Progreso -->
+        <div class="dash-col">
+          <div class="card">
+            <div class="card-header-row">
+              <h3><i class="fas fa-calendar-day" style="color:var(--primary)"></i> Próximos Vencimientos</h3>
+              <button class="btn btn-secondary btn-sm" onclick="navigate('board')">Ver Tablero <i class="fas fa-arrow-right"></i></button>
+            </div>
+            <div id="dash-upcoming-list" class="dash-list"></div>
+          </div>
+
+          <!-- Progress Widget -->
+          <div class="card">
+            <div class="card-header-row">
+              <h3><i class="fas fa-chart-line" style="color:var(--emerald)"></i> Progreso de Tareas</h3>
+              <span id="dash-kanban-pct" style="font-weight:700;color:var(--emerald);">0%</span>
+            </div>
+            <div class="dash-progress-track">
+              <div id="dash-kanban-bar" class="dash-progress-fill" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Col Right: Pedidos 3D activos -->
+        <div class="dash-col">
+          <div class="card">
+            <div class="card-header-row">
+              <h3><i class="fas fa-cube" style="color:var(--pink)"></i> Pedidos 3D en Producción</h3>
+              <button class="btn btn-secondary btn-sm" onclick="navigate('pedidos')">Ver Pedidos <i class="fas fa-arrow-right"></i></button>
+            </div>
+            <div id="dash-pedidos-list" class="dash-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- ── DUMP TAB ────────────────────────────────────── -->
     <section class="tab" id="tab-dump">
@@ -93,7 +188,7 @@
       <div class="page-header row">
         <div>
           <h2><i class="fas fa-columns" style="color:var(--cyan)"></i> Tablero Kanban</h2>
-          <p>Gestión visual de todas tus tareas.</p>
+          <p>Gestión visual de todas tus tareas (arrastrá para mover entre estados).</p>
         </div>
         <div class="filters">
           <select id="filter-board-cat" class="select"><option value="">Todas las categorías</option></select>
@@ -173,34 +268,102 @@
     <section class="tab" id="tab-finanzas">
       <div class="page-header row">
         <div>
-          <h2><i class="fas fa-wallet" style="color:var(--emerald)"></i> Finanzas</h2>
-          <p>Control de gastos e ingresos personales.</p>
+          <h2><i class="fas fa-wallet" style="color:var(--emerald)"></i> Finanzas & Inversiones</h2>
+          <p>Control de transacciones personales y portafolio de inversiones.</p>
         </div>
-        <div class="filters">
-          <select id="filter-fin-type" class="select">
-            <option value="">Todos</option><option value="ingreso">Ingresos</option><option value="gasto">Gastos</option>
-          </select>
-          <button class="btn btn-primary btn-sm" onclick="openNewFinanzaModal()"><i class="fas fa-plus"></i> Nueva</button>
-          <button class="btn btn-secondary btn-sm" onclick="apiDownload('/finanzas/export','Finanzas.xlsx')"><i class="fas fa-file-excel"></i> Excel</button>
-          <label class="btn btn-secondary btn-sm" style="cursor:pointer">
-            <i class="fas fa-upload"></i> Importar
-            <input type="file" accept=".xlsx" style="display:none" onchange="importFile('/finanzas/import',this,loadFinanzas)">
-          </label>
+        <div class="fin-subtab-nav">
+          <button class="btn btn-secondary btn-sm fin-subtab-btn active" data-subtab="transacciones" onclick="switchFinanzasSubtab('transacciones')">
+            <i class="fas fa-receipt"></i> Transacciones
+          </button>
+          <button class="btn btn-secondary btn-sm fin-subtab-btn" data-subtab="inversiones" onclick="switchFinanzasSubtab('inversiones')">
+            <i class="fas fa-chart-pie"></i> Inversiones
+          </button>
         </div>
       </div>
 
-      <div class="fin-summary">
-        <div class="card fin-card fin-ingreso"><span>Ingresos</span><h3 id="fin-ingresos">$0</h3></div>
-        <div class="card fin-card fin-gasto"><span>Gastos</span><h3 id="fin-gastos">$0</h3></div>
-        <div class="card fin-card fin-balance"><span>Balance</span><h3 id="fin-balance">$0</h3></div>
+      <!-- Subtab Transacciones -->
+      <div id="fin-subtab-transacciones" class="fin-subtab-content">
+        <div class="row" style="margin-bottom:14px;justify-content:space-between;align-items:center;">
+          <div class="fin-summary">
+            <div class="card fin-card fin-ingreso"><span>Ingresos</span><h3 id="fin-ingresos">$0</h3></div>
+            <div class="card fin-card fin-gasto"><span>Gastos</span><h3 id="fin-gastos">$0</h3></div>
+            <div class="card fin-card fin-balance"><span>Balance</span><h3 id="fin-balance">$0</h3></div>
+          </div>
+          <div class="filters">
+            <select id="filter-fin-type" class="select">
+              <option value="">Todos</option><option value="ingreso">Ingresos</option><option value="gasto">Gastos</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="openNewFinanzaModal()"><i class="fas fa-plus"></i> Nueva</button>
+            <button class="btn btn-secondary btn-sm" onclick="apiDownload('/finanzas/export','Finanzas.xlsx')"><i class="fas fa-file-excel"></i> Excel</button>
+            <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+              <i class="fas fa-upload"></i> Importar
+              <input type="file" accept=".xlsx" style="display:none" onchange="importFile('/finanzas/import',this,loadFinanzas)">
+            </label>
+          </div>
+        <!-- Barra de acciones en lote -->
+        <div id="fin-batch-bar" style="display:none; align-items:center; justify-content:space-between; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:var(--r-md); padding:10px 16px; margin-bottom:14px; gap:12px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <i class="fas fa-check-square" style="color:var(--red); font-size:1.1rem;"></i>
+            <span style="font-size:.88rem; font-weight:600;"><span id="fin-selected-count">0</span> transacciones seleccionadas</span>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="clearFinanzasSelection()">
+              <i class="fas fa-times"></i> Deseleccionar
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="deleteSelectedFinanzas()">
+              <i class="fas fa-trash-alt"></i> Eliminar seleccionadas
+            </button>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:38px;text-align:center;">
+                    <input type="checkbox" id="fin-select-all" class="fin-check-input" title="Seleccionar todas" onchange="toggleSelectAllFinanzas(this.checked)">
+                  </th>
+                  <th>Fecha Alta</th>
+                  <th>Fecha Pago</th>
+                  <th>Tipo</th>
+                  <th>Descripción</th>
+                  <th>Monto</th>
+                  <th>Categoría</th>
+                  <th>Medio</th>
+                  <th>Pagado a / Obs.</th>
+                  <th>Acc.</th>
+                </tr>
+              </thead>
+              <tbody id="fin-tbody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
-      <div class="card" style="padding:0;overflow:hidden">
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Fecha Alta</th><th>Fecha Pago</th><th>Tipo</th><th>Descripción</th><th>Monto</th><th>Categoría</th><th>Medio</th><th>Pagado a / Obs.</th><th>Acc.</th></tr></thead>
-            <tbody id="fin-tbody"></tbody>
-          </table>
+      <!-- Subtab Inversiones -->
+      <div id="fin-subtab-inversiones" class="fin-subtab-content" style="display:none">
+        <div class="row" style="margin-bottom:14px;justify-content:space-between;align-items:center;">
+          <div class="fin-summary">
+            <div class="card fin-card fin-ingreso"><span>Valor Total Actual</span><h3 id="inv-total-val">$0</h3></div>
+            <div class="card fin-card fin-balance"><span>Rendimiento Estimado</span><h3 id="inv-total-profit">$0</h3></div>
+          </div>
+          <div class="filters">
+            <button class="btn btn-primary btn-sm" onclick="openNewInversionModal()"><i class="fas fa-plus"></i> Registrar Inversión</button>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th><th>Descripción</th><th>Plataforma</th><th>Precio Compra Prom.</th><th>Cantidad</th><th>Valor Actual</th><th>Ganancia/Pérdida</th><th>Acc.</th>
+                </tr>
+              </thead>
+              <tbody id="inv-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
@@ -435,6 +598,32 @@
   </div>
 </div>
 
+<!-- Inversion Modal -->
+<div id="modal-inversion" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="card">
+      <div class="modal-head">
+        <h3><i class="fas fa-chart-pie"></i> Registrar Inversión</h3>
+        <button class="icon-btn" onclick="closeModal('modal-inversion')"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="form-group"><label>Descripción / Activo *</label><input id="inv-desc" class="input" placeholder="Ej: CEDEAR Apple (AAPL)"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Plataforma</label><input id="inv-platform" class="input" placeholder="Ej: Balanz, IOL, Binance"></div>
+        <div class="form-group"><label>Fecha</label><input id="inv-fecha" class="input" placeholder="dd/mm/aaaa"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Precio Compra Promedio ($)</label><input id="inv-buy-price" type="number" step="0.01" class="input" placeholder="0.00"></div>
+        <div class="form-group"><label>Cantidad</label><input id="inv-qty" type="number" step="0.0001" class="input" placeholder="1.0"></div>
+      </div>
+      <div class="form-group"><label>Valor Actual Total ($)</label><input id="inv-curr-val" type="number" step="0.01" class="input" placeholder="0.00"></div>
+      <div class="modal-foot">
+        <button class="btn btn-secondary" onclick="closeModal('modal-inversion')">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitInversionForm()"><i class="fas fa-save"></i> Guardar Inversión</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Pedido Modal -->
 <div id="modal-pedido" class="modal-overlay" style="display:none">
   <div class="modal-box" style="width:520px">
@@ -480,16 +669,19 @@
 
 
 <!-- ══ SCRIPTS ════════════════════════════════════════════════ -->
-<script src="js/state.js"></script>
-<script src="js/api.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/modules/dump.js"></script>
-<script src="js/modules/board.js"></script>
-<script src="js/modules/facu.js"></script>
-<script src="js/modules/finanzas.js"></script>
-<script src="js/modules/pedidos.js"></script>
-<script src="js/modules/config.js"></script>
-<script src="js/app.js"></script>
+<script src="vendor/flatpickr.min.js"></script>
+<script src="vendor/flatpickr.es.js"></script>
+<script src="js/state.js?v=3"></script>
+<script src="js/api.js?v=3"></script>
+<script src="js/ui.js?v=3"></script>
+<script src="js/modules/dashboard.js?v=3"></script>
+<script src="js/modules/dump.js?v=3"></script>
+<script src="js/modules/board.js?v=3"></script>
+<script src="js/modules/facu.js?v=3"></script>
+<script src="js/modules/finanzas.js?v=3"></script>
+<script src="js/modules/pedidos.js?v=3"></script>
+<script src="js/modules/config.js?v=3"></script>
+<script src="js/app.js?v=3"></script>
 <script>
 // Helper global de importación de archivos
 async function importFile(endpoint, input, reloadFn) {

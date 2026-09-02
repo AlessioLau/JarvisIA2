@@ -13,9 +13,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from database import get_db, init_db
+from database import (
+    get_db, init_db, use_supabase, get_sb,
+    sb_select, sb_select_multi_filter, sb_get_one,
+    sb_insert, sb_insert_many, sb_update, sb_delete,
+    sb_count, sb_sum, now_iso,
+)
+try:
+    from database import sb_delete_in
+except ImportError:
+    def sb_delete_in(table: str, column: str, values: list, filters: dict = None) -> None:
+        if not values:
+            return
+        q = get_sb().table(table).delete()
+        for k, v in (filters or {}).items():
+            q = q.eq(k, v)
+        q.in_(column, values).execute()
+
 from schemas import (
     ApproveRequest, AreaCreate, AreaOut,
+    BatchDeleteRequest,
     CategoryCreate, CategoryOut,
     DumpCreate, DumpOut, ExtractedItem,
     FacuCreate, FacuOut,
@@ -97,12 +114,26 @@ def api_login(body: UserLogin):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/categories", response_model=List[CategoryOut])
 def get_categories(user_id: int = 1):
+    if use_supabase():
+        return sb_select("categories", {"user_id": user_id}, order="name")
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM categories WHERE user_id=? ORDER BY name", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/categories", response_model=CategoryOut, status_code=201)
 def create_category(body: CategoryCreate, user_id: int = 1):
+    if use_supabase():
+        try:
+            return sb_insert("categories", {
+                "user_id": user_id,
+                "name": body.name.lower().strip(),
+                "color": body.color,
+                "description": body.description,
+            })
+        except Exception as e:
+            if "unique" in str(e).lower() or "duplicate" in str(e).lower() or "23505" in str(e):
+                raise HTTPException(400, "La categoría ya existe")
+            raise
     with get_db() as conn:
         try:
             conn.execute("INSERT INTO categories (user_id,name,color,description) VALUES (?,?,?,?)",
@@ -111,11 +142,17 @@ def create_category(body: CategoryCreate, user_id: int = 1):
             row = conn.execute("SELECT * FROM categories WHERE user_id=? AND name=?",
                                (user_id, body.name.lower().strip())).fetchone()
             return dict(row)
-        except sqlite3.IntegrityError:
-            raise HTTPException(400, "La categoría ya existe")
+        except Exception as e:
+            if "IntegrityError" in type(e).__name__ or "unique" in str(e).lower():
+                raise HTTPException(400, "La categoría ya existe")
+            raise
+
 
 @app.delete("/api/categories/{cat_id}", status_code=204)
 def delete_category(cat_id: int):
+    if use_supabase():
+        sb_delete("categories", {"id": cat_id})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM categories WHERE id=?", (cat_id,))
         conn.commit()
@@ -126,12 +163,27 @@ def delete_category(cat_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/areas", response_model=List[AreaOut])
 def get_areas(user_id: int = 1):
+    if use_supabase():
+        return sb_select("areas", {"user_id": user_id}, order="name")
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM areas WHERE user_id=? ORDER BY name", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/areas", response_model=AreaOut, status_code=201)
 def create_area(body: AreaCreate, user_id: int = 1):
+    if use_supabase():
+        try:
+            return sb_insert("areas", {
+                "user_id": user_id,
+                "name": body.name.strip(),
+                "color": body.color,
+                "icon": body.icon,
+                "description": body.description,
+            })
+        except Exception as e:
+            if "unique" in str(e).lower() or "duplicate" in str(e).lower() or "23505" in str(e):
+                raise HTTPException(400, "El área ya existe")
+            raise
     with get_db() as conn:
         try:
             conn.execute("INSERT INTO areas (user_id,name,color,icon,description) VALUES (?,?,?,?,?)",
@@ -140,11 +192,17 @@ def create_area(body: AreaCreate, user_id: int = 1):
             row = conn.execute("SELECT * FROM areas WHERE user_id=? AND name=?",
                                (user_id, body.name.strip())).fetchone()
             return dict(row)
-        except sqlite3.IntegrityError:
-            raise HTTPException(400, "El área ya existe")
+        except Exception as e:
+            if "IntegrityError" in type(e).__name__ or "unique" in str(e).lower():
+                raise HTTPException(400, "El área ya existe")
+            raise
+
 
 @app.delete("/api/areas/{area_id}", status_code=204)
 def delete_area(area_id: int):
+    if use_supabase():
+        sb_delete("areas", {"id": area_id})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM areas WHERE id=?", (area_id,))
         conn.commit()
@@ -155,12 +213,21 @@ def delete_area(area_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/rules", response_model=List[RuleOut])
 def get_rules(user_id: int = 1):
+    if use_supabase():
+        return sb_select("rules", {"user_id": user_id}, order="target_type")
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM rules WHERE user_id=? ORDER BY target_type, keyword", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/rules", response_model=RuleOut, status_code=201)
 def create_rule(body: RuleCreate, user_id: int = 1):
+    if use_supabase():
+        return sb_insert("rules", {
+            "user_id": user_id,
+            "keyword": body.keyword.lower().strip(),
+            "target_type": body.target_type,
+            "target_value": body.target_value,
+        })
     with get_db() as conn:
         conn.execute("INSERT INTO rules (user_id,keyword,target_type,target_value) VALUES (?,?,?,?)",
                      (user_id, body.keyword.lower().strip(), body.target_type, body.target_value))
@@ -170,6 +237,9 @@ def create_rule(body: RuleCreate, user_id: int = 1):
 
 @app.delete("/api/rules/{rule_id}", status_code=204)
 def delete_rule(rule_id: int):
+    if use_supabase():
+        sb_delete("rules", {"id": rule_id})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM rules WHERE id=?", (rule_id,))
         conn.commit()
@@ -180,12 +250,16 @@ def delete_rule(rule_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/dumps", response_model=List[DumpOut])
 def get_dumps(user_id: int = 1):
+    if use_supabase():
+        return sb_select("dumps", {"user_id": user_id}, order="id", desc=True)
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM dumps WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/dumps", response_model=DumpOut, status_code=201)
 def create_dump(body: DumpCreate, user_id: int = 1):
+    if use_supabase():
+        return sb_insert("dumps", {"user_id": user_id, "original_text": body.text, "status": "pending"})
     with get_db() as conn:
         conn.execute("INSERT INTO dumps (user_id,original_text,status) VALUES (?,?,?)",
                      (user_id, body.text, "pending"))
@@ -197,11 +271,14 @@ def create_dump(body: DumpCreate, user_id: int = 1):
 def process_dump(body: ProcessRequest, user_id: int = 1):
     text = body.text
     if body.dump_id and not text:
-        with get_db() as conn:
-            row = conn.execute("SELECT original_text FROM dumps WHERE id=?", (body.dump_id,)).fetchone()
-            if not row:
-                raise HTTPException(404, "Dump no encontrado")
-            text = row["original_text"]
+        if use_supabase():
+            row = sb_get_one("dumps", {"id": body.dump_id})
+        else:
+            with get_db() as conn:
+                row = conn.execute("SELECT original_text FROM dumps WHERE id=?", (body.dump_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Dump no encontrado")
+        text = row["original_text"]
     if not text:
         raise HTTPException(400, "Texto requerido")
     items = ai_service.process(text, user_id)
@@ -209,6 +286,24 @@ def process_dump(body: ProcessRequest, user_id: int = 1):
 
 @app.post("/api/dumps/approve", response_model=List[ItemOut], status_code=201)
 def approve_items(body: ApproveRequest, user_id: int = 1):
+    if use_supabase():
+        inserted = []
+        for item in body.items:
+            row = sb_insert("items", {
+                "user_id": user_id,
+                "dump_id": body.dump_id,
+                "title": item.title,
+                "category": item.category,
+                "status": "pendiente",
+                "priority": item.priority or "media",
+                "area": item.area,
+                "due_date": item.due_date,
+                "notes": item.notes,
+            })
+            inserted.append(row)
+        if body.dump_id:
+            sb_update("dumps", body.dump_id, {"status": "processed"})
+        return inserted
     with get_db() as conn:
         for item in body.items:
             conn.execute(
@@ -227,6 +322,9 @@ def approve_items(body: ApproveRequest, user_id: int = 1):
 
 @app.delete("/api/dumps/{dump_id}", status_code=204)
 def delete_dump(dump_id: int):
+    if use_supabase():
+        sb_delete("dumps", {"id": dump_id})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM dumps WHERE id=?", (dump_id,))
         conn.commit()
@@ -240,11 +338,18 @@ def get_items(user_id: int = 1,
               category: Optional[str] = Query(None),
               area: Optional[str] = Query(None),
               item_status: Optional[str] = Query(None, alias="status")):
+    if use_supabase():
+        return sb_select_multi_filter(
+            "items",
+            base_filters={"user_id": user_id},
+            optional_filters={"category": category, "area": area, "status": item_status},
+            order="id", desc=True,
+        )
     sql = "SELECT * FROM items WHERE user_id=?"
     params: list = [user_id]
-    if category:   sql += " AND category=?"; params.append(category)
-    if area:       sql += " AND area=?";     params.append(area)
-    if item_status:sql += " AND status=?";   params.append(item_status)
+    if category:    sql += " AND category=?"; params.append(category)
+    if area:        sql += " AND area=?";     params.append(area)
+    if item_status: sql += " AND status=?";  params.append(item_status)
     sql += " ORDER BY id DESC"
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
@@ -252,14 +357,16 @@ def get_items(user_id: int = 1,
 
 @app.put("/api/items/{item_id}", response_model=ItemOut)
 def update_item(item_id: int, body: ItemUpdate):
-    fields, params = [], []
-    for k, v in body.dict(exclude_unset=True).items():
-        if v is not None:
-            fields.append(f"{k}=?"); params.append(v)
-    if not fields:
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
         raise HTTPException(400, "Sin cambios")
-    fields.append("updated_at=CURRENT_TIMESTAMP")
-    params.append(item_id)
+    if use_supabase():
+        updates["updated_at"] = now_iso()
+        row = sb_update("items", item_id, updates)
+        return row_or_404(row)
+    updates_sql = list(updates.items())
+    fields = [f"{k}=?" for k, _ in updates_sql] + ["updated_at=CURRENT_TIMESTAMP"]
+    params = [v for _, v in updates_sql] + [item_id]
     with get_db() as conn:
         conn.execute(f"UPDATE items SET {', '.join(fields)} WHERE id=?", params)
         conn.commit()
@@ -268,6 +375,9 @@ def update_item(item_id: int, body: ItemUpdate):
 
 @app.delete("/api/items/{item_id}", status_code=204)
 def delete_item(item_id: int):
+    if use_supabase():
+        sb_delete("items", {"id": item_id})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM items WHERE id=?", (item_id,))
         conn.commit()
@@ -280,12 +390,22 @@ def delete_item(item_id: int):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/facu", response_model=List[FacuOut])
 def get_facu(user_id: int = 1):
+    if use_supabase():
+        return sb_select("facu_materias", {"user_id": user_id}, order="name")
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM facu_materias WHERE user_id=? ORDER BY name", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/facu", response_model=FacuOut, status_code=201)
 def create_facu(body: FacuCreate, user_id: int = 1):
+    if use_supabase():
+        return sb_insert("facu_materias", {
+            "user_id": user_id, "name": body.name, "abbreviation": body.abbreviation,
+            "cursado": body.cursado, "level": body.level,
+            "correlativa_cursada": body.correlativa_cursada,
+            "correlativa_aprobada": body.correlativa_aprobada,
+            "status": body.status, "grade": body.grade, "condition_detail": body.condition_detail,
+        })
     with get_db() as conn:
         conn.execute(
             """INSERT INTO facu_materias
@@ -301,6 +421,16 @@ def create_facu(body: FacuCreate, user_id: int = 1):
 
 @app.put("/api/facu/{mid}", response_model=FacuOut)
 def update_facu(mid: int, body: FacuCreate):
+    data = {
+        "name": body.name, "abbreviation": body.abbreviation,
+        "cursado": body.cursado, "level": body.level,
+        "correlativa_cursada": body.correlativa_cursada,
+        "correlativa_aprobada": body.correlativa_aprobada,
+        "status": body.status, "grade": body.grade, "condition_detail": body.condition_detail,
+    }
+    if use_supabase():
+        row = sb_update("facu_materias", mid, data)
+        return row_or_404(row)
     with get_db() as conn:
         conn.execute(
             """UPDATE facu_materias SET
@@ -318,6 +448,9 @@ def update_facu(mid: int, body: FacuCreate):
 
 @app.delete("/api/facu/{mid}", status_code=204)
 def delete_facu(mid: int):
+    if use_supabase():
+        sb_delete("facu_materias", {"id": mid})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM facu_materias WHERE id=?", (mid,))
         conn.commit()
@@ -341,8 +474,11 @@ def export_facu(user_id: int = 1):
         "Libre":     PatternFill("solid", fgColor="7f1d1d"),
     }
 
-    with get_db() as conn:
-        rows = conn.execute("SELECT * FROM facu_materias WHERE user_id=? ORDER BY name", (user_id,)).fetchall()
+    if use_supabase():
+        rows = sb_select("facu_materias", {"user_id": user_id}, order="name")
+    else:
+        with get_db() as conn:
+            rows = [dict(r) for r in conn.execute("SELECT * FROM facu_materias WHERE user_id=? ORDER BY name", (user_id,)).fetchall()]
 
     for r in rows:
         row_data = [
@@ -372,31 +508,54 @@ async def import_facu(file: UploadFile = File(...), user_id: int = 1):
     wb = openpyxl.load_workbook(io.BytesIO(await file.read()), data_only=True)
     ws = wb["Hoja 1"] if "Hoja 1" in wb.sheetnames else wb.active
     count = 0
-    with get_db() as conn:
-        for i, row in enumerate(ws.iter_rows(values_only=True)):
-            if i == 0: continue  # skip header
-            name = row[0]
-            if not name: continue
-            name = str(name).strip()
-            abbr   = str(row[1]).strip() if row[1] else None
-            cursado= str(row[2]).strip() if len(row) > 2 and row[2] else "C"
-            level  = str(row[3]).strip() if len(row) > 3 and row[3] else "I"
-            corr_c = str(row[4]).strip() if len(row) > 4 and row[4] else None
-            corr_a = str(row[5]).strip() if len(row) > 5 and row[5] else None
-            stat   = str(row[6]).strip() if len(row) > 6 and row[6] else "NoCursada"
-            grade  = None
-            if len(row) > 7 and row[7] is not None:
-                try: grade = float(row[7])
-                except: pass
-            cond   = str(row[8]).strip() if len(row) > 8 and row[8] else None
-            conn.execute(
-                """INSERT OR IGNORE INTO facu_materias
-                   (user_id,name,abbreviation,cursado,level,correlativa_cursada,correlativa_aprobada,status,grade,condition_detail)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (user_id, name, abbr, cursado, level, corr_c, corr_a, stat, grade, cond)
-            )
-            count += 1
-        conn.commit()
+    rows_to_insert = []
+    for i, row in enumerate(ws.iter_rows(values_only=True)):
+        if i == 0: continue  # skip header
+        name = row[0]
+        if not name: continue
+        name = str(name).strip()
+        abbr   = str(row[1]).strip() if row[1] else None
+        cursado= str(row[2]).strip() if len(row) > 2 and row[2] else "C"
+        level  = str(row[3]).strip() if len(row) > 3 and row[3] else "I"
+        corr_c = str(row[4]).strip() if len(row) > 4 and row[4] else None
+        corr_a = str(row[5]).strip() if len(row) > 5 and row[5] else None
+        stat   = str(row[6]).strip() if len(row) > 6 and row[6] else "NoCursada"
+        grade  = None
+        if len(row) > 7 and row[7] is not None:
+            try: grade = float(row[7])
+            except: pass
+        cond   = str(row[8]).strip() if len(row) > 8 and row[8] else None
+        rows_to_insert.append({
+            "user_id": user_id, "name": name, "abbreviation": abbr,
+            "cursado": cursado, "level": level,
+            "correlativa_cursada": corr_c, "correlativa_aprobada": corr_a,
+            "status": stat, "grade": grade, "condition_detail": cond,
+        })
+        count += 1
+    if use_supabase():
+        if rows_to_insert:
+            try:
+                sb_insert_many("facu_materias", rows_to_insert)
+            except Exception:
+                # Si falla bulk (ej. duplicados), insertar uno a uno ignorando errores
+                count = 0
+                for r in rows_to_insert:
+                    try: sb_insert("facu_materias", r); count += 1
+                    except Exception: pass
+    else:
+        with get_db() as conn:
+            for r in rows_to_insert:
+                try:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO facu_materias
+                           (user_id,name,abbreviation,cursado,level,correlativa_cursada,correlativa_aprobada,status,grade,condition_detail)
+                           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (r["user_id"], r["name"], r["abbreviation"], r["cursado"], r["level"],
+                         r["correlativa_cursada"], r["correlativa_aprobada"],
+                         r["status"], r["grade"], r["condition_detail"])
+                    )
+                except Exception: pass
+            conn.commit()
     return {"message": f"Se importaron {count} materias"}
 
 
@@ -410,12 +569,22 @@ async def import_facu(file: UploadFile = File(...), user_id: int = 1):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/finanzas", response_model=List[FinanzaOut])
 def get_finanzas(user_id: int = 1):
+    if use_supabase():
+        return sb_select("finanzas", {"user_id": user_id}, order="id", desc=True)
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM finanzas WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/finanzas", response_model=FinanzaOut, status_code=201)
 def create_finanza(body: FinanzaCreate, user_id: int = 1):
+    if use_supabase():
+        return sb_insert("finanzas", {
+            "user_id": user_id, "type": body.type,
+            "fecha_alta": body.fecha_alta, "fecha_pago": body.fecha_pago,
+            "description": body.description, "amount": body.amount,
+            "category": body.category, "payment_method": body.payment_method,
+            "paid_to": body.paid_to, "notes": body.notes,
+        })
     with get_db() as conn:
         conn.execute(
             """INSERT INTO finanzas
@@ -431,6 +600,14 @@ def create_finanza(body: FinanzaCreate, user_id: int = 1):
 
 @app.put("/api/finanzas/{fid}", response_model=FinanzaOut)
 def update_finanza(fid: int, body: FinanzaCreate):
+    data = {
+        "type": body.type, "fecha_alta": body.fecha_alta, "fecha_pago": body.fecha_pago,
+        "description": body.description, "amount": body.amount, "category": body.category,
+        "payment_method": body.payment_method, "paid_to": body.paid_to, "notes": body.notes,
+    }
+    if use_supabase():
+        row = sb_update("finanzas", fid, data)
+        return row_or_404(row)
     with get_db() as conn:
         conn.execute(
             """UPDATE finanzas SET type=?,fecha_alta=?,fecha_pago=?,description=?,
@@ -445,19 +622,43 @@ def update_finanza(fid: int, body: FinanzaCreate):
 
 @app.delete("/api/finanzas/{fid}", status_code=204)
 def delete_finanza(fid: int):
+    if use_supabase():
+        sb_delete("finanzas", {"id": fid})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM finanzas WHERE id=?", (fid,))
         conn.commit()
 
+@app.post("/api/finanzas/batch-delete")
+def batch_delete_finanzas(body: BatchDeleteRequest, user_id: int = 1):
+    if not body.ids:
+        return {"deleted": 0}
+    if use_supabase():
+        sb_delete_in("finanzas", "id", body.ids, {"user_id": user_id})
+        return {"deleted": len(body.ids)}
+    with get_db() as conn:
+        placeholders = ",".join("?" for _ in body.ids)
+        conn.execute(f"DELETE FROM finanzas WHERE user_id=? AND id IN ({placeholders})", [user_id] + body.ids)
+        conn.commit()
+    return {"deleted": len(body.ids)}
+
 # ── Inversiones ──────────────────────────────────────────────
 @app.get("/api/inversiones", response_model=List[InversionOut])
 def get_inversiones(user_id: int = 1):
+    if use_supabase():
+        return sb_select("inversiones", {"user_id": user_id}, order="id", desc=True)
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM inversiones WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
     return [dict(r) for r in rows]
 
 @app.post("/api/inversiones", response_model=InversionOut, status_code=201)
 def create_inversion(body: InversionCreate, user_id: int = 1):
+    if use_supabase():
+        return sb_insert("inversiones", {
+            "user_id": user_id, "fecha": body.fecha, "description": body.description,
+            "platform": body.platform, "buy_price": body.buy_price,
+            "quantity": body.quantity, "current_val": body.current_val,
+        })
     with get_db() as conn:
         conn.execute(
             "INSERT INTO inversiones (user_id,fecha,description,platform,buy_price,quantity,current_val) VALUES (?,?,?,?,?,?,?)",
@@ -469,6 +670,9 @@ def create_inversion(body: InversionCreate, user_id: int = 1):
 
 @app.delete("/api/inversiones/{inv_id}", status_code=204)
 def delete_inversion(inv_id: int):
+    if use_supabase():
+        sb_delete("inversiones", {"id": inv_id})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM inversiones WHERE id=?", (inv_id,))
         conn.commit()
@@ -482,10 +686,13 @@ def export_finanzas(user_id: int = 1):
     ws_g.append(["Fecha Alta", "Fecha Pago", "Descripcion", "Monto",
                  "Categoria", "Medio de Pago", "Observacion"])
     _hdr_style(ws_g, 1, "7f1d1d")
-    with get_db() as conn:
-        gastos = conn.execute(
-            "SELECT * FROM finanzas WHERE user_id=? AND type='gasto' ORDER BY id DESC", (user_id,)
-        ).fetchall()
+    if use_supabase():
+        gastos = sb_select_multi_filter("finanzas", {"user_id": user_id, "type": "gasto"}, order="id", desc=True)
+    else:
+        with get_db() as conn:
+            gastos = [dict(r) for r in conn.execute(
+                "SELECT * FROM finanzas WHERE user_id=? AND type='gasto' ORDER BY id DESC", (user_id,)
+            ).fetchall()]
     for r in gastos:
         ws_g.append([r["fecha_alta"] or "", r["fecha_pago"],
                      r["description"], r["amount"],
@@ -495,21 +702,27 @@ def export_finanzas(user_id: int = 1):
     ws_i = wb.create_sheet("Ingresos")
     ws_i.append(["Fecha", "Descripción", "Monto", "Categoria", "Medio de Pago", "Pagado a"])
     _hdr_style(ws_i, 1, "14532d")
-    with get_db() as conn:
-        ingresos = conn.execute(
-            "SELECT * FROM finanzas WHERE user_id=? AND type='ingreso' ORDER BY id DESC", (user_id,)
-        ).fetchall()
+    if use_supabase():
+        ingresos = sb_select_multi_filter("finanzas", {"user_id": user_id, "type": "ingreso"}, order="id", desc=True)
+    else:
+        with get_db() as conn:
+            ingresos = [dict(r) for r in conn.execute(
+                "SELECT * FROM finanzas WHERE user_id=? AND type='ingreso' ORDER BY id DESC", (user_id,)
+            ).fetchall()]
     for r in ingresos:
         ws_i.append([r["fecha_pago"], r["description"], r["amount"],
-                     r["category"], r["payment_method"], r["paid_to"] or ""])
+                     r["category"], r["payment_method"], r.get("paid_to") or ""])
 
     # ── Hoja Inversiones ──────────────────────────────────────
     ws_inv = wb.create_sheet("Inversiones")
     ws_inv.append(["Fecha", "Descripción", "Plataforma",
                    "Precio de Compra Promedio", "Cantidad", "Valor actual"])
     _hdr_style(ws_inv, 1, "1e3a5f")
-    with get_db() as conn:
-        invs = conn.execute("SELECT * FROM inversiones WHERE user_id=? ORDER BY id", (user_id,)).fetchall()
+    if use_supabase():
+        invs = sb_select("inversiones", {"user_id": user_id}, order="id")
+    else:
+        with get_db() as conn:
+            invs = [dict(r) for r in conn.execute("SELECT * FROM inversiones WHERE user_id=? ORDER BY id", (user_id,)).fetchall()]
     for r in invs:
         ws_inv.append([r["fecha"] or "", r["description"], r["platform"] or "",
                        r["buy_price"], r["quantity"], r["current_val"]])
@@ -529,77 +742,96 @@ def export_finanzas(user_id: int = 1):
 async def import_finanzas(file: UploadFile = File(...), user_id: int = 1):
     wb = openpyxl.load_workbook(io.BytesIO(await file.read()), data_only=True)
     count = 0
-    with get_db() as conn:
-        # Hoja Gastos
-        if "Gastos" in wb.sheetnames:
-            ws = wb["Gastos"]
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                if i == 0: continue
-                desc = row[2] if len(row) > 2 else None
-                amt  = row[3] if len(row) > 3 else None
-                if not desc or amt is None: continue
-                try: amt = float(amt)
-                except: continue
-                conn.execute(
-                    """INSERT INTO finanzas
-                       (user_id,type,fecha_alta,fecha_pago,description,amount,category,payment_method,notes)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
-                    (user_id, "gasto",
-                     fmt_date(row[0]) if row[0] else None,
-                     fmt_date(row[1]) if row[1] else today_str(),
-                     str(desc).strip(), amt,
-                     str(row[4]).strip() if len(row) > 4 and row[4] else "Varios",
-                     str(row[5]).strip() if len(row) > 5 and row[5] else "Efectivo",
-                     str(row[6]).strip() if len(row) > 6 and row[6] else None)
-                )
-                count += 1
+    gastos_rows, ingresos_rows, inv_rows = [], [], []
 
-        # Hoja Ingresos
-        if "Ingresos" in wb.sheetnames:
-            ws = wb["Ingresos"]
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                if i == 0: continue
-                desc = row[1] if len(row) > 1 else None
-                amt  = row[2] if len(row) > 2 else None
-                if not desc or amt is None: continue
-                try: amt = float(amt)
-                except: continue
-                conn.execute(
-                    """INSERT INTO finanzas
-                       (user_id,type,fecha_pago,description,amount,category,payment_method,paid_to)
-                       VALUES (?,?,?,?,?,?,?,?)""",
-                    (user_id, "ingreso",
-                     fmt_date(row[0]) if row[0] else today_str(),
-                     str(desc).strip(), amt,
-                     str(row[3]).strip() if len(row) > 3 and row[3] else "Varios",
-                     str(row[4]).strip() if len(row) > 4 and row[4] else "Efectivo",
-                     str(row[5]).strip() if len(row) > 5 and row[5] else None)
-                )
-                count += 1
+    # Hoja Gastos
+    if "Gastos" in wb.sheetnames:
+        ws = wb["Gastos"]
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0: continue
+            desc = row[2] if len(row) > 2 else None
+            amt  = row[3] if len(row) > 3 else None
+            if not desc or amt is None: continue
+            try: amt = float(amt)
+            except: continue
+            gastos_rows.append({
+                "user_id": user_id, "type": "gasto",
+                "fecha_alta": fmt_date(row[0]) if row[0] else None,
+                "fecha_pago": fmt_date(row[1]) if row[1] else today_str(),
+                "description": str(desc).strip(), "amount": amt,
+                "category": str(row[4]).strip() if len(row) > 4 and row[4] else "Varios",
+                "payment_method": str(row[5]).strip() if len(row) > 5 and row[5] else "Efectivo",
+                "notes": str(row[6]).strip() if len(row) > 6 and row[6] else None,
+            })
+            count += 1
 
-        # Hoja Inversiones
-        if "Inversiones" in wb.sheetnames:
-            ws = wb["Inversiones"]
-            for i, row in enumerate(ws.iter_rows(values_only=True)):
-                if i == 0: continue
-                desc = row[1] if len(row) > 1 else None
-                if not desc: continue
-                try: qty = float(row[4]) if len(row) > 4 and row[4] else None
-                except: qty = None
-                try: val = float(row[5]) if len(row) > 5 and row[5] else None
-                except: val = None
-                try: bp = float(row[3]) if len(row) > 3 and row[3] else None
-                except: bp = None
+    # Hoja Ingresos
+    if "Ingresos" in wb.sheetnames:
+        ws = wb["Ingresos"]
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0: continue
+            desc = row[1] if len(row) > 1 else None
+            amt  = row[2] if len(row) > 2 else None
+            if not desc or amt is None: continue
+            try: amt = float(amt)
+            except: continue
+            ingresos_rows.append({
+                "user_id": user_id, "type": "ingreso",
+                "fecha_pago": fmt_date(row[0]) if row[0] else today_str(),
+                "description": str(desc).strip(), "amount": amt,
+                "category": str(row[3]).strip() if len(row) > 3 and row[3] else "Varios",
+                "payment_method": str(row[4]).strip() if len(row) > 4 and row[4] else "Efectivo",
+                "paid_to": str(row[5]).strip() if len(row) > 5 and row[5] else None,
+            })
+            count += 1
+
+    # Hoja Inversiones
+    if "Inversiones" in wb.sheetnames:
+        ws = wb["Inversiones"]
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0: continue
+            desc = row[1] if len(row) > 1 else None
+            if not desc: continue
+            try: qty = float(row[4]) if len(row) > 4 and row[4] else None
+            except: qty = None
+            try: val = float(row[5]) if len(row) > 5 and row[5] else None
+            except: val = None
+            try: bp = float(row[3]) if len(row) > 3 and row[3] else None
+            except: bp = None
+            inv_rows.append({
+                "user_id": user_id,
+                "fecha": fmt_date(row[0]) if row[0] else None,
+                "description": str(desc).strip(),
+                "platform": str(row[2]).strip() if len(row) > 2 and row[2] else None,
+                "buy_price": bp, "quantity": qty, "current_val": val,
+            })
+            count += 1
+
+    if use_supabase():
+        if gastos_rows:   sb_insert_many("finanzas",   gastos_rows)
+        if ingresos_rows: sb_insert_many("finanzas",   ingresos_rows)
+        if inv_rows:      sb_insert_many("inversiones", inv_rows)
+    else:
+        with get_db() as conn:
+            for r in gastos_rows:
+                conn.execute(
+                    "INSERT INTO finanzas (user_id,type,fecha_alta,fecha_pago,description,amount,category,payment_method,notes) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (r["user_id"], r["type"], r["fecha_alta"], r["fecha_pago"],
+                     r["description"], r["amount"], r["category"], r["payment_method"], r["notes"])
+                )
+            for r in ingresos_rows:
+                conn.execute(
+                    "INSERT INTO finanzas (user_id,type,fecha_pago,description,amount,category,payment_method,paid_to) VALUES (?,?,?,?,?,?,?,?)",
+                    (r["user_id"], r["type"], r["fecha_pago"], r["description"],
+                     r["amount"], r["category"], r["payment_method"], r["paid_to"])
+                )
+            for r in inv_rows:
                 conn.execute(
                     "INSERT INTO inversiones (user_id,fecha,description,platform,buy_price,quantity,current_val) VALUES (?,?,?,?,?,?,?)",
-                    (user_id, fmt_date(row[0]) if row[0] else None,
-                     str(desc).strip(),
-                     str(row[2]).strip() if len(row) > 2 and row[2] else None,
-                     bp, qty, val)
+                    (r["user_id"], r["fecha"], r["description"], r["platform"],
+                     r["buy_price"], r["quantity"], r["current_val"])
                 )
-                count += 1
-
-        conn.commit()
+            conn.commit()
     return {"message": f"Se importaron {count} registros financieros"}
 
 
@@ -613,6 +845,13 @@ async def import_finanzas(file: UploadFile = File(...), user_id: int = 1):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/pedidos", response_model=List[PedidoOut])
 def get_pedidos(user_id: int = 1, estado: Optional[str] = Query(None)):
+    if use_supabase():
+        return sb_select_multi_filter(
+            "pedidos3d",
+            base_filters={"user_id": user_id},
+            optional_filters={"status": estado},
+            order="id", desc=True,
+        )
     sql = "SELECT * FROM pedidos3d WHERE user_id=?"
     params: list = [user_id]
     if estado: sql += " AND status=?"; params.append(estado)
@@ -623,6 +862,14 @@ def get_pedidos(user_id: int = 1, estado: Optional[str] = Query(None)):
 
 @app.post("/api/pedidos", response_model=PedidoOut, status_code=201)
 def create_pedido(body: PedidoCreate, user_id: int = 1):
+    if use_supabase():
+        return sb_insert("pedidos3d", {
+            "user_id": user_id, "client": body.client, "seller": body.seller,
+            "product": body.product, "order_date": body.order_date,
+            "delivery_date": body.delivery_date, "price": body.price,
+            "time_str": body.time_str, "grams_str": body.grams_str, "hours": body.hours,
+            "status": body.status, "priority": body.priority, "notes": body.notes,
+        })
     with get_db() as conn:
         conn.execute(
             """INSERT INTO pedidos3d
@@ -639,6 +886,15 @@ def create_pedido(body: PedidoCreate, user_id: int = 1):
 
 @app.put("/api/pedidos/{pid}", response_model=PedidoOut)
 def update_pedido(pid: int, body: PedidoCreate):
+    data = {
+        "client": body.client, "seller": body.seller, "product": body.product,
+        "order_date": body.order_date, "delivery_date": body.delivery_date,
+        "price": body.price, "time_str": body.time_str, "grams_str": body.grams_str,
+        "hours": body.hours, "status": body.status, "priority": body.priority, "notes": body.notes,
+    }
+    if use_supabase():
+        row = sb_update("pedidos3d", pid, data)
+        return row_or_404(row)
     with get_db() as conn:
         conn.execute(
             """UPDATE pedidos3d SET client=?,seller=?,product=?,order_date=?,delivery_date=?,
@@ -653,6 +909,9 @@ def update_pedido(pid: int, body: PedidoCreate):
 
 @app.delete("/api/pedidos/{pid}", status_code=204)
 def delete_pedido(pid: int):
+    if use_supabase():
+        sb_delete("pedidos3d", {"id": pid})
+        return
     with get_db() as conn:
         conn.execute("DELETE FROM pedidos3d WHERE id=?", (pid,))
         conn.commit()
@@ -677,8 +936,11 @@ def export_pedidos(user_id: int = 1):
         "Cancelado":    PatternFill("solid", fgColor="7f1d1d"),
     }
 
-    with get_db() as conn:
-        rows = conn.execute("SELECT * FROM pedidos3d WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()
+    if use_supabase():
+        rows = sb_select("pedidos3d", {"user_id": user_id}, order="id", desc=True)
+    else:
+        with get_db() as conn:
+            rows = [dict(r) for r in conn.execute("SELECT * FROM pedidos3d WHERE user_id=? ORDER BY id DESC", (user_id,)).fetchall()]
     for r in rows:
         ws_p.append([
             r["client"], r["seller"] or "", r["product"],
@@ -716,33 +978,41 @@ async def import_pedidos(file: UploadFile = File(...), user_id: int = 1):
     wb = openpyxl.load_workbook(io.BytesIO(await file.read()), data_only=True)
     ws = wb["Pedidos"] if "Pedidos" in wb.sheetnames else wb.active
     count = 0
-    with get_db() as conn:
-        for i, row in enumerate(ws.iter_rows(values_only=True)):
-            if i == 0: continue
-            client = row[0] if row[0] else None
-            product= row[2] if len(row) > 2 and row[2] else None
-            if not client or not product: continue
-            try: price = float(row[4]) if len(row) > 4 and row[4] else None
-            except: price = None
-            conn.execute(
-                """INSERT INTO pedidos3d
-                   (user_id,client,seller,product,order_date,delivery_date,price,time_str,grams_str,status,priority,notes)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (user_id,
-                 str(client).strip(),
-                 str(row[1]).strip() if len(row) > 1 and row[1] else None,
-                 str(product).strip(),
-                 fmt_date(row[3]) if len(row) > 3 and row[3] else today_str(),
-                 fmt_date(row[5]) if len(row) > 5 and row[5] else None,
-                 price,
-                 str(row[6]).strip() if len(row) > 6 and row[6] else None,
-                 str(row[7]).strip() if len(row) > 7 and row[7] else None,
-                 str(row[8]).strip() if len(row) > 8 and row[8] else "Diseño",
-                 str(row[9]).strip() if len(row) > 9 and row[9] else "media",
-                 str(row[10]).strip() if len(row) > 10 and row[10] else None)
-            )
-            count += 1
-        conn.commit()
+    pedidos_rows = []
+    for i, row in enumerate(ws.iter_rows(values_only=True)):
+        if i == 0: continue
+        client  = row[0] if row[0] else None
+        product = row[2] if len(row) > 2 and row[2] else None
+        if not client or not product: continue
+        try: price = float(row[4]) if len(row) > 4 and row[4] else None
+        except: price = None
+        pedidos_rows.append({
+            "user_id": user_id,
+            "client": str(client).strip(),
+            "seller": str(row[1]).strip() if len(row) > 1 and row[1] else None,
+            "product": str(product).strip(),
+            "order_date": fmt_date(row[3]) if len(row) > 3 and row[3] else today_str(),
+            "delivery_date": fmt_date(row[5]) if len(row) > 5 and row[5] else None,
+            "price": price,
+            "time_str": str(row[6]).strip() if len(row) > 6 and row[6] else None,
+            "grams_str": str(row[7]).strip() if len(row) > 7 and row[7] else None,
+            "status": str(row[8]).strip() if len(row) > 8 and row[8] else "Diseño",
+            "priority": str(row[9]).strip() if len(row) > 9 and row[9] else "media",
+            "notes": str(row[10]).strip() if len(row) > 10 and row[10] else None,
+        })
+        count += 1
+    if use_supabase():
+        if pedidos_rows: sb_insert_many("pedidos3d", pedidos_rows)
+    else:
+        with get_db() as conn:
+            for r in pedidos_rows:
+                conn.execute(
+                    "INSERT INTO pedidos3d (user_id,client,seller,product,order_date,delivery_date,price,time_str,grams_str,status,priority,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (r["user_id"], r["client"], r["seller"], r["product"],
+                     r["order_date"], r["delivery_date"], r["price"],
+                     r["time_str"], r["grams_str"], r["status"], r["priority"], r["notes"])
+                )
+            conn.commit()
     return {"message": f"Se importaron {count} pedidos"}
 
 
@@ -751,6 +1021,14 @@ async def import_pedidos(file: UploadFile = File(...), user_id: int = 1):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/stats")
 def get_stats(user_id: int = 1):
+    if use_supabase():
+        pending  = sb_count("items",    {"user_id": user_id, "status": "pendiente"})
+        # Pedidos activos: todos menos Entregado y Cancelado
+        all_ped  = get_sb().table("pedidos3d").select("status").eq("user_id", user_id).execute().data or []
+        pedidos  = sum(1 for r in all_ped if r.get("status") not in ("Entregado", "Cancelado"))
+        ingresos = sb_sum("finanzas", "amount", {"user_id": user_id, "type": "ingreso"})
+        gastos   = sb_sum("finanzas", "amount", {"user_id": user_id, "type": "gasto"})
+        return {"pending": pending, "active_pedidos": pedidos, "balance": ingresos - gastos}
     with get_db() as conn:
         pending  = conn.execute("SELECT COUNT(*) FROM items WHERE user_id=? AND status='pendiente'", (user_id,)).fetchone()[0]
         pedidos  = conn.execute("SELECT COUNT(*) FROM pedidos3d WHERE user_id=? AND status NOT IN ('Entregado','Cancelado')", (user_id,)).fetchone()[0]

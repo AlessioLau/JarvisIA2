@@ -9,6 +9,7 @@ const state = {
   dumps: [],
   facuMaterias: [],
   finanzas: [],
+  inversiones: [],
   pedidos: [],
   pendingExtracted: [],  // items de revisión del dump actual
   pendingDumpId: null,

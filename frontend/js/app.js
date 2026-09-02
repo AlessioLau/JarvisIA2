@@ -17,6 +17,7 @@ async function init() {
     loadItems(),
     loadFacu(),
     loadFinanzas(),
+    loadInversiones(),
     loadPedidos(),
   ]);
   await loadStats();
@@ -48,7 +49,7 @@ async function init() {
     document.getElementById(id)?.addEventListener("input", calcularCosto);
   });
 
-  navigate("dump");
+  navigate("dashboard");
 }
 
 // ══════════════════════════════════════════════════════════
@@ -61,6 +62,7 @@ async function loadStats() {
     if (el("stat-pending"))  el("stat-pending").textContent  = stats.pending;
     if (el("stat-pedidos"))  el("stat-pedidos").textContent  = stats.active_pedidos;
     if (el("stat-balance"))  el("stat-balance").textContent  = `$${Number(stats.balance).toLocaleString("es-AR",{minimumFractionDigits:0})}`;
+    if (typeof renderDashboard === "function") renderDashboard();
   } catch (e) { console.error(e); }
 }
 

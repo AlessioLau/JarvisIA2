@@ -71,8 +71,9 @@ class DumpOut(BaseModel):
     created_at: Optional[str] = None
 
 class ProcessRequest(BaseModel):
-    text: str
+    text: Optional[str] = None
     dump_id: Optional[int] = None
+
 
 class ExtractedItem(BaseModel):
     title: str
@@ -157,6 +158,9 @@ class FinanzaOut(FinanzaCreate):
     id: int
     user_id: int
     created_at: Optional[str] = None
+
+class BatchDeleteRequest(BaseModel):
+    ids: List[int]
 
 class InversionCreate(BaseModel):
     fecha: Optional[str] = None
