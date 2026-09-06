@@ -60,7 +60,7 @@ function showToast(msg, type = "info") {
 // ── Modal ──────────────────────────────────────────────────
 function openModal(id) {
   const el = document.getElementById(id);
-  if (el) { el.style.display = "grid"; el.offsetHeight; }
+  if (el) { el.style.display = "flex"; el.offsetHeight; }
 }
 
 function closeModal(id) {
@@ -138,8 +138,15 @@ function typeBadge(type) {
   return `<span class="badge badge-${safe}">${escHtml(type)}</span>`;
 }
 
-function getDateStatus(dueDateStr) {
+function getDateStatus(dueDateStr, isCompleted = false) {
   if (!dueDateStr) return { status: "none", badge: "" };
+
+  if (isCompleted) {
+    return {
+      status: "completed",
+      badge: `<span class="badge-date normal" style="background:rgba(16,185,129,.15);color:#34d399;border:1px solid rgba(16,185,129,.3);"><i class="fas fa-check-circle"></i> ${escHtml(dueDateStr)}</span>`
+    };
+  }
   
   const today = new Date();
   today.setHours(0, 0, 0, 0);

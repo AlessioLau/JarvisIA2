@@ -1,15 +1,9 @@
 /* app.js — Init y navegación principal de JarvisIA2 */
 
 // ══════════════════════════════════════════════════════════
-// INIT
+// RELOAD ALL DATA (CUANDO CAMBIA DE USUARIO O INICIA SESIÓN)
 // ══════════════════════════════════════════════════════════
-async function init() {
-  // Nav links
-  document.querySelectorAll(".nav-btn[data-tab]").forEach(btn => {
-    btn.addEventListener("click", () => navigate(btn.dataset.tab));
-  });
-
-  // Cargar datos base
+async function reloadAllData() {
   await Promise.all([
     loadCategories(),
     loadAreas(),
@@ -22,6 +16,17 @@ async function init() {
   ]);
   await loadStats();
   await loadDumps();
+  navigate("dashboard");
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+async function init() {
+  // Nav links
+  document.querySelectorAll(".nav-btn[data-tab]").forEach(btn => {
+    btn.addEventListener("click", () => navigate(btn.dataset.tab));
+  });
 
   // Dump textarea — live preview
   const ta = document.getElementById("dump-text");
@@ -49,7 +54,11 @@ async function init() {
     document.getElementById(id)?.addEventListener("input", calcularCosto);
   });
 
-  navigate("dashboard");
+  // Verificar sesión existente o solicitar login
+  const isAuthenticated = await checkAuthSession();
+  if (isAuthenticated) {
+    await reloadAllData();
+  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -67,3 +76,4 @@ async function loadStats() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+

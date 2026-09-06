@@ -42,7 +42,8 @@ function renderBoard() {
     }
 
     body.innerHTML = filtered.map(item => {
-      const dateInfo = getDateStatus(item.due_date);
+      const isCompleted = item.status === "completado";
+      const dateInfo = getDateStatus(item.due_date, isCompleted);
       return `
         <div class="task-card" draggable="true" ondragstart="handleDragStart(event, ${item.id})">
           <div class="task-card-title">${escHtml(item.title)}</div>

@@ -8,7 +8,7 @@ from typing import List, Optional
 
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +18,7 @@ from database import (
     sb_select, sb_select_multi_filter, sb_get_one,
     sb_insert, sb_insert_many, sb_update, sb_delete,
     sb_count, sb_sum, now_iso,
+    SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
 )
 try:
     from database import sb_delete_in
@@ -43,6 +44,7 @@ from schemas import (
     ProcessRequest, ProcessResponse,
     RuleCreate, RuleOut,
     UserLogin, UserRegister,
+    OAuthSyncRequest,
 )
 from services import auth_service
 from services import ai_service
@@ -51,6 +53,42 @@ init_db()
 
 app = FastAPI(title="JarvisIA2 API", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+# ── Auth Dependency ────────────────────────────────────────────────────────
+def get_current_user(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+    """Obtiene el usuario autenticado a partir del header Authorization: Bearer <token>."""
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    payload = auth_service.verify_token(token)
+    if not payload:
+        return None
+    return {
+        "id": payload["sub"],
+        "username": payload["username"],
+        "name": payload.get("name", ""),
+        "role": payload.get("role", "user"),
+    }
+
+def resolve_effective_user_id(
+    requested_user_id: Optional[int] = None,
+    current_user: Optional[dict] = None
+) -> int:
+    """
+    Determina el user_id efectivo a consultar:
+    - Si el usuario es admin: puede consultar requested_user_id si se pasa, de lo contrario su propio id.
+    - Si es user normal: SIEMPRE su propio id (no puede ver registros de otros).
+    - Si no está autenticado (fallback retrocompatible): usa requested_user_id o 1.
+    """
+    if current_user:
+        if current_user.get("role") == "admin":
+            return requested_user_id if requested_user_id is not None else current_user["id"]
+        # Usuario normal: restringido a sus propios datos
+        return current_user["id"]
+    return requested_user_id if requested_user_id is not None else 1
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -96,7 +134,7 @@ def _hdr_style(ws, row: int, fill_color: str = "1e293b"):
 # ══════════════════════════════════════════════════════════════════════════════
 @app.post("/api/auth/register", status_code=201)
 def api_register(body: UserRegister):
-    res = auth_service.register(body.username, body.password, body.name)
+    res = auth_service.register(body.username, body.password, body.name, body.role)
     if not res:
         raise HTTPException(400, "El usuario ya existe")
     return res
@@ -107,6 +145,48 @@ def api_login(body: UserLogin):
     if not res:
         raise HTTPException(401, "Credenciales incorrectas")
     return res
+
+@app.get("/api/auth/config")
+def api_auth_config():
+    """Retorna las claves públicas necesarias para que el cliente frontend inicialice Supabase Auth."""
+    return {
+        "supabaseUrl": SUPABASE_URL if use_supabase() else "",
+        "supabaseAnonKey": SUPABASE_PUBLISHABLE_KEY if use_supabase() else "",
+        "oauthEnabled": bool(use_supabase() and SUPABASE_PUBLISHABLE_KEY),
+    }
+
+@app.post("/api/auth/oauth-sync")
+def api_oauth_sync(body: OAuthSyncRequest):
+    """Sincroniza el usuario autenticado con Google/OAuth en Supabase hacia la tabla users y emite token."""
+    res = auth_service.sync_oauth_user(body.access_token)
+    if not res:
+        raise HTTPException(400, "No se pudo sincronizar la sesión con Google")
+    return res
+
+
+@app.get("/api/auth/me")
+def api_me(current_user: Optional[dict] = Depends(get_current_user)):
+    if not current_user:
+        raise HTTPException(401, "No autenticado")
+    return current_user
+
+@app.get("/api/auth/users")
+def get_all_users(current_user: Optional[dict] = Depends(get_current_user)):
+    """Solo admins pueden ver la lista de usuarios para cambiar de vista o asignar."""
+    if not current_user or current_user.get("role") != "admin":
+        raise HTTPException(403, "Acceso denegado: solo administradores")
+    if use_supabase():
+        try:
+            users = get_sb().table("users").select("id, username, name, role").execute().data or []
+        except Exception:
+            users = get_sb().table("users").select("id, username, name").execute().data or []
+        for u in users:
+            if not u.get("role"):
+                u["role"] = "admin" if u.get("username") == "admin" else "user"
+        return users
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, username, name, role FROM users ORDER BY id ASC").fetchall()
+        return [dict(r) for r in rows]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -337,7 +417,9 @@ def delete_dump(dump_id: int):
 def get_items(user_id: int = 1,
               category: Optional[str] = Query(None),
               area: Optional[str] = Query(None),
-              item_status: Optional[str] = Query(None, alias="status")):
+              item_status: Optional[str] = Query(None, alias="status"),
+              current_user: Optional[dict] = Depends(get_current_user)):
+    user_id = resolve_effective_user_id(user_id, current_user)
     if use_supabase():
         return sb_select_multi_filter(
             "items",
@@ -1020,7 +1102,8 @@ async def import_pedidos(file: UploadFile = File(...), user_id: int = 1):
 # STATS
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/api/stats")
-def get_stats(user_id: int = 1):
+def get_stats(user_id: int = 1, current_user: Optional[dict] = Depends(get_current_user)):
+    user_id = resolve_effective_user_id(user_id, current_user)
     if use_supabase():
         pending  = sb_count("items",    {"user_id": user_id, "status": "pendiente"})
         # Pedidos activos: todos menos Entregado y Cancelado

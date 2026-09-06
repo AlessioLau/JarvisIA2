@@ -448,10 +448,17 @@ tr.fin-row-selected td {
 
 /* ── MODAL ──────────────────────────────────── */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,.72);
-  backdrop-filter: blur(8px); display: grid; place-items: center; z-index: 1000;
+  position: fixed; inset: 0; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(0,0,0,.78);
+  backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000;
+  padding: 16px; box-sizing: border-box;
 }
-.modal-box { width: 440px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal-box {
+  width: 460px; max-width: 95vw; max-height: 90vh;
+  overflow-y: auto; margin: auto; position: relative; z-index: 10001;
+}
 .modal-box .card { padding: 24px; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
 .modal-head h3 { font-family: var(--font-h); font-size: 1.1rem; font-weight: 700; }

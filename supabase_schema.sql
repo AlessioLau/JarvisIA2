@@ -9,8 +9,13 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     name TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'user',
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Si la tabla ya existía sin la columna 'role', ejecutar también:
+-- ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+-- UPDATE users SET role = 'admin' WHERE username = 'admin';
 
 -- 2. TABLA DE CATEGORÍAS
 CREATE TABLE IF NOT EXISTS categories (
@@ -137,9 +142,9 @@ CREATE TABLE IF NOT EXISTS pedidos3d (
 -- ==============================================================================
 
 -- Usuario admin (password: 1234 hash SHA256: 03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4)
-INSERT INTO users (username, password_hash, name)
-VALUES ('admin', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'Lau Admin')
-ON CONFLICT (username) DO NOTHING;
+INSERT INTO users (username, password_hash, name, role)
+VALUES ('admin', '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4', 'Lau Admin', 'admin')
+ON CONFLICT (username) DO UPDATE SET role = 'admin';
 
 -- Categorías por defecto
 INSERT INTO categories (user_id, name, color, description) VALUES

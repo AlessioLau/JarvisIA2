@@ -5,11 +5,18 @@ async function renderDashboard() {
   const dateEl = document.getElementById("dash-date");
 
   if (greetingEl) {
-    const hour = new Date().getHours();
-    let timeGreeting = "¡Buenas noches";
-    if (hour >= 6 && hour < 12) timeGreeting = "¡Buenos días";
-    else if (hour >= 12 && hour < 20) timeGreeting = "¡Buenas tardes";
-    greetingEl.textContent = `${timeGreeting}, Lau! 👋`;
+    if (state.user) {
+      const hour = new Date().getHours();
+      let timeGreeting = "¡Buenas noches";
+      if (hour >= 6 && hour < 12) timeGreeting = "¡Buenos días";
+      else if (hour >= 12 && hour < 20) timeGreeting = "¡Buenas tardes";
+      const displayName = state.user.name || state.user.username || "";
+      greetingEl.textContent = `${timeGreeting}, ${displayName}! 👋`;
+      greetingEl.style.display = "block";
+    } else {
+      greetingEl.textContent = "";
+      greetingEl.style.display = "none";
+    }
   }
 
   if (dateEl) {

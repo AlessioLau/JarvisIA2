@@ -8,6 +8,7 @@ class UserRegister(BaseModel):
     username: str
     password: str
     name: str = ""
+    role: str = "user"
 
 class UserLogin(BaseModel):
     username: str
@@ -17,6 +18,10 @@ class UserOut(BaseModel):
     id: int
     username: str
     name: str
+    role: str = "user"
+
+class OAuthSyncRequest(BaseModel):
+    access_token: str
 
 
 class CategoryCreate(BaseModel):

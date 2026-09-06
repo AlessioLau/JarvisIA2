@@ -28,6 +28,11 @@ SUPABASE_KEY = (
     or os.getenv("SUPABASE_KEY")
     or ""
 ).strip()
+SUPABASE_PUBLISHABLE_KEY = (
+    os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+    or ""
+).strip()
 
 _sb_client = None
 
@@ -127,16 +132,6 @@ def sb_delete(table: str, filters: Dict) -> None:
     for k, v in filters.items():
         q = q.eq(k, v)
     q.execute()
-
-
-def sb_delete_in(table: str, column: str, values: List, filters: Optional[Dict] = None) -> None:
-    """DELETE FROM table WHERE filters AND column IN (values)."""
-    if not values:
-        return
-    q = get_sb().table(table).delete()
-    for k, v in (filters or {}).items():
-        q = q.eq(k, v)
-    q.in_(column, values).execute()
 
 
 def sb_count(table: str, filters: Dict) -> int:
@@ -332,8 +327,8 @@ def init_db() -> None:
     if row[0] == 0:
         pw = hashlib.sha256("1234".encode()).hexdigest()
         cur = raw.execute(
-            "INSERT INTO users (username, password_hash, name) VALUES (?,?,?)",
-            ("admin", pw, "Lau Admin"),
+            "INSERT INTO users (username, password_hash, name, role) VALUES (?,?,?,?)",
+            ("admin", pw, "Lau Admin", "admin"),
         )
         uid = cur.lastrowid
         raw.executemany(

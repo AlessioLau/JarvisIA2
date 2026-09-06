@@ -12,7 +12,11 @@ async function loadPedidos() {
 function renderPedidos() {
   const filterStatus = document.getElementById("filter-pedido-status")?.value || "";
   let pedidos = state.pedidos;
-  if (filterStatus) pedidos = pedidos.filter(p => p.status === filterStatus);
+  if (filterStatus === "pendientes") {
+    pedidos = pedidos.filter(p => !["Entregado", "Cancelado"].includes(p.status));
+  } else if (filterStatus) {
+    pedidos = pedidos.filter(p => p.status === filterStatus);
+  }
 
   const container = document.getElementById("pedidos-list");
   if (!container) return;
