@@ -336,6 +336,55 @@ input[type="date"].input::-webkit-calendar-picker-indicator {
 .task-card.dragging { opacity: .4; transform: scale(.97); cursor: grabbing; }
 .task-card-title { font-size: .9rem; font-weight: 600; margin-bottom: 8px; line-height: 1.4; }
 .task-card-meta  { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .76rem; color: var(--text-muted); }
+.task-card-notes {
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  white-space: pre-line;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+}
+.task-card-notes i {
+  color: var(--cyan);
+  margin-right: 5px;
+}
+.task-card-files {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.task-file-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 3px 8px;
+  font-size: 0.74rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 100%;
+}
+.task-file-pill:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: var(--primary);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.task-file-pill i {
+  color: var(--pink);
+  font-size: 0.8rem;
+}
 .task-card-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
 
 /* ── FINANZAS & INVERSIONES ──────────────────────── */
